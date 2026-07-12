@@ -62,16 +62,17 @@ type Node struct {
 
 func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, seed int64, trace *Trace) *Node {
 	n := &Node{
-		id:       id,
-		peerIDs:  append([]int(nil), peerIDs...),
-		caller:   caller,
-		trace:    trace,
-		rng:      rand.New(rand.NewSource(seed + int64(id)*1009)),
-		votedFor: -1,
-		role:     Follower,
-		done:     make(chan struct{}),
+		id:          id,
+		peerIDs:     append([]int(nil), peerIDs...),
+		caller:      caller,
+		trace:       trace,
+		rng:         rand.New(rand.NewSource(seed + int64(id)*1009)),
+		currentTerm: 0,
+		votedFor:    -1,
+		role:        Follower,
+		done:        make(chan struct{}),
 	}
-	n.deadline = time.Unix(0, 0).Add(electionMin)
+	n.resetElectionDeadlineLocked()
 
 	go func() {
 		<-ready
@@ -110,14 +111,19 @@ func (n *Node) run() {
 func (n *Node) tick() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	// Red-state scaffold: later phases add randomized deadline checks,
-	// elections, guarded vote counting, and heartbeats here.
+	if n.role != Leader && time.Now().After(n.deadline) {
+		n.recordLocked("ElectionDeadline", "deadline reached; election starts in P4")
+		n.resetElectionDeadlineLocked()
+	}
 }
 
 func (n *Node) resetElectionDeadlineLocked() {
-	// P2 intentionally starts from a fixed deadline so the red test exposes the
-	// missing "new random deadline every round" behavior.
-	n.deadline = time.Unix(0, 0).Add(electionMin)
+	jitter := time.Duration(n.rng.Int63n(int64(electionJitter)))
+	base := time.Now()
+	if n.deadline.After(base) {
+		base = n.deadline
+	}
+	n.deadline = base.Add(electionMin + jitter)
 }
 
 func (n *Node) electionDeadlineForTest() time.Time {
