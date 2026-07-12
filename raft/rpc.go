@@ -26,6 +26,12 @@ func (n *Node) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error 
 
 	reply.Term = n.currentTerm
 	reply.VoteGranted = false
+
+	if args.Term < n.currentTerm {
+		n.recordLocked("RequestVote", "term=%d candidate=%d grant=%v (stale term)", args.Term, args.CandidateID, reply.VoteGranted)
+		return nil
+	}
+
 	n.recordLocked("RequestVote", "term=%d candidate=%d grant=%v", args.Term, args.CandidateID, reply.VoteGranted)
 	return nil
 }
