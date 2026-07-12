@@ -1,0 +1,13 @@
+# Binaries
+*.exe
+*.test
+*.out
+
+# Go workspace / build
+/bin/
+vendor/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
