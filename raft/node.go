@@ -148,6 +148,19 @@ func (n *Node) collectVote(peer int, electionTerm int, votes *int) {
 		n.recordLocked("StepDown", "reply term=%d > currentTerm; back to follower", reply.Term)
 		return
 	}
+
+	if n.currentTerm != electionTerm || n.role != Candidate {
+		return
+	}
+	if !reply.VoteGranted {
+		return
+	}
+
+	*votes++
+	if *votes > (len(n.peerIDs)+1)/2 {
+		n.role = Leader
+		n.recordLocked("BecomeLeader", "term=%d votes=%d", n.currentTerm, *votes)
+	}
 }
 
 func (n *Node) resetElectionDeadlineLocked() {
