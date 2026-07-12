@@ -123,6 +123,31 @@ func (n *Node) startElectionLocked() {
 	n.resetElectionDeadlineLocked()
 	electionTerm := n.currentTerm
 	n.recordLocked("StartElection", "term=%d self-vote", electionTerm)
+
+	votes := 1
+	for _, peer := range n.peerIDs {
+		go n.collectVote(peer, electionTerm, &votes)
+	}
+}
+
+func (n *Node) collectVote(peer int, electionTerm int, votes *int) {
+	args := RequestVoteArgs{Term: electionTerm, CandidateID: n.id}
+	var reply RequestVoteReply
+	if err := n.caller.Call(peer, "Node.RequestVote", args, &reply); err != nil {
+		return
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if reply.Term > n.currentTerm {
+		n.currentTerm = reply.Term
+		n.votedFor = -1
+		n.role = Follower
+		n.resetElectionDeadlineLocked()
+		n.recordLocked("StepDown", "reply term=%d > currentTerm; back to follower", reply.Term)
+		return
+	}
 }
 
 func (n *Node) resetElectionDeadlineLocked() {
