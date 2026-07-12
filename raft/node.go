@@ -112,9 +112,17 @@ func (n *Node) tick() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.role != Leader && time.Now().After(n.deadline) {
-		n.recordLocked("ElectionDeadline", "deadline reached; election starts in P4")
-		n.resetElectionDeadlineLocked()
+		n.startElectionLocked()
 	}
+}
+
+func (n *Node) startElectionLocked() {
+	n.currentTerm++
+	n.role = Candidate
+	n.votedFor = n.id
+	n.resetElectionDeadlineLocked()
+	electionTerm := n.currentTerm
+	n.recordLocked("StartElection", "term=%d self-vote", electionTerm)
 }
 
 func (n *Node) resetElectionDeadlineLocked() {
