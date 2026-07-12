@@ -39,6 +39,12 @@ func (n *Node) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error 
 		reply.Term = n.currentTerm
 	}
 
+	if n.votedFor == -1 || n.votedFor == args.CandidateID {
+		n.votedFor = args.CandidateID
+		reply.VoteGranted = true
+		n.resetElectionDeadlineLocked()
+	}
+
 	n.recordLocked("RequestVote", "term=%d candidate=%d grant=%v", args.Term, args.CandidateID, reply.VoteGranted)
 	return nil
 }
