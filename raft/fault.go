@@ -50,6 +50,12 @@ func (n *network) reconnect(id int) {
 	n.connected[id] = true
 }
 
+func (n *network) isConnected(id int) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.connected[id]
+}
+
 func (n *network) setDelay(id int, delay time.Duration) {
 	n.mu.Lock()
 	defer n.mu.Unlock()

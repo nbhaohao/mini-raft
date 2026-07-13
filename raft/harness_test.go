@@ -70,6 +70,9 @@ func (h *Harness) CheckSingleLeader() (int, int) {
 		leader := -1
 		term := -1
 		for _, s := range h.servers {
+			if !h.net.isConnected(s.id) {
+				continue
+			}
 			st := s.Status()
 			if st.Role == Leader {
 				if leader >= 0 {
@@ -91,6 +94,9 @@ func (h *Harness) CheckSingleLeader() (int, int) {
 func (h *Harness) CheckNoLeader() {
 	h.t.Helper()
 	for _, s := range h.servers {
+		if !h.net.isConnected(s.id) {
+			continue
+		}
 		st := s.Status()
 		if st.Role == Leader {
 			h.t.Fatalf("seed=%d: server %d is leader; want none\n%s", h.seed, st.ID, h.trace)
