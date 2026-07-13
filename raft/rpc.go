@@ -1,5 +1,7 @@
 package raft
 
+import "time"
+
 type RequestVoteArgs struct {
 	Term        int
 	CandidateID int
@@ -29,6 +31,14 @@ func (n *Node) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error 
 
 	if args.Term < n.currentTerm {
 		n.recordLocked("RequestVote", "term=%d candidate=%d grant=%v (stale term)", args.Term, args.CandidateID, reply.VoteGranted)
+		return nil
+	}
+
+	// leader-stickiness：若在最小选举超时内刚从合法 leader 收到过心跳，
+	// 拒绝任何 RequestVote 且不采纳其 term——挡住断连后凭抬高的 term 回来
+	// 捣乱的节点，把新选举窗口强制拉到 >= electionMin。
+	if time.Since(n.lastLeaderContact) < electionMin {
+		n.recordLocked("RequestVote", "term=%d candidate=%d grant=%v (leader sticky)", args.Term, args.CandidateID, reply.VoteGranted)
 		return nil
 	}
 
@@ -68,6 +78,7 @@ func (n *Node) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) 
 	n.role = Follower
 	reply.Term = n.currentTerm
 	reply.Success = true
+	n.lastLeaderContact = time.Now()
 	n.resetElectionDeadlineLocked()
 
 	n.recordLocked("AppendEntries", "term=%d leader=%d success=%v", args.Term, args.LeaderID, reply.Success)
