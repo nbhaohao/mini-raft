@@ -41,6 +41,10 @@ const (
 	heartbeatInterval = 120 * time.Millisecond
 	electionMin       = 300 * time.Millisecond
 	electionJitter    = 300 * time.Millisecond
+	// leaderLease：失联 leader 在一个 lease 内确认不到多数派联系就自行让位。
+	// 必须 > heartbeatInterval（健康 leader 每轮续租不被误判），且 < electionMin
+	// （配合 leader-stickiness 把新选举窗口拉到 ≥ electionMin，让位先于新主产生）。
+	leaderLease = 2 * heartbeatInterval
 )
 
 type Node struct {
@@ -52,11 +56,12 @@ type Node struct {
 	trace   *Trace
 	rng     *rand.Rand
 
-	currentTerm   int
-	votedFor      int
-	role          Role
-	deadline      time.Time
-	nextHeartbeat time.Time
+	currentTerm       int
+	votedFor          int
+	role              Role
+	deadline          time.Time
+	nextHeartbeat     time.Time
+	lastLeaderContact time.Time
 
 	done chan struct{}
 }
@@ -113,6 +118,12 @@ func (n *Node) tick() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.role == Leader {
+		if time.Now().After(n.deadline) {
+			n.role = Follower
+			n.resetElectionDeadlineLocked()
+			n.recordLocked("StepDown", "no majority contact within lease; back to follower")
+			return
+		}
 		if time.Now().After(n.nextHeartbeat) {
 			n.broadcastHeartbeatLocked()
 		}
@@ -166,6 +177,7 @@ func (n *Node) collectVote(peer int, electionTerm int, votes *int) {
 	*votes++
 	if *votes > (len(n.peerIDs)+1)/2 {
 		n.role = Leader
+		n.refreshLeaderDeadlineLocked()
 		n.recordLocked("BecomeLeader", "term=%d votes=%d", n.currentTerm, *votes)
 		n.broadcastHeartbeatLocked()
 	}
@@ -174,12 +186,13 @@ func (n *Node) collectVote(peer int, electionTerm int, votes *int) {
 func (n *Node) broadcastHeartbeatLocked() {
 	n.nextHeartbeat = time.Now().Add(heartbeatInterval)
 	term := n.currentTerm
+	acks := 1
 	for _, peer := range n.peerIDs {
-		go n.sendHeartbeat(peer, term)
+		go n.sendHeartbeat(peer, term, &acks)
 	}
 }
 
-func (n *Node) sendHeartbeat(peer int, term int) {
+func (n *Node) sendHeartbeat(peer int, term int, acks *int) {
 	args := AppendEntriesArgs{Term: term, LeaderID: n.id}
 	var reply AppendEntriesReply
 	if err := n.caller.Call(peer, "Node.AppendEntries", args, &reply); err != nil {
@@ -195,7 +208,23 @@ func (n *Node) sendHeartbeat(peer int, term int) {
 		n.role = Follower
 		n.resetElectionDeadlineLocked()
 		n.recordLocked("StepDown", "heartbeat reply term=%d > currentTerm; back to follower", reply.Term)
+		return
 	}
+
+	if n.role != Leader || n.currentTerm != term {
+		return
+	}
+	if !reply.Success {
+		return
+	}
+	*acks++
+	if *acks > (len(n.peerIDs)+1)/2 {
+		n.refreshLeaderDeadlineLocked()
+	}
+}
+
+func (n *Node) refreshLeaderDeadlineLocked() {
+	n.deadline = time.Now().Add(leaderLease)
 }
 
 func (n *Node) resetElectionDeadlineLocked() {
