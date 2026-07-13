@@ -211,9 +211,10 @@ func (n *Node) Submit(command any) bool {
 	if n.role != Leader {
 		return false
 	}
-	// 你来实现（P1 只建立 leader 本地日志边界，不发送 entries）：
-	// 1. 以 currentTerm 追加 LogEntry；2. 记录本地 index；3. 返回 accepted。
-	return false
+	n.log = append(n.log, LogEntry{Term: n.currentTerm, Command: command})
+	index := len(n.log) - 1
+	n.recordLocked("Submit", "index=%d term=%d accepted (leader-local only)", index, n.currentTerm)
+	return true
 }
 
 func (n *Node) initReplicationStateLocked() {
