@@ -55,6 +55,21 @@ func (n *Node) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) 
 
 	reply.Term = n.currentTerm
 	reply.Success = false
+
+	if args.Term < n.currentTerm {
+		n.recordLocked("AppendEntries", "term=%d leader=%d success=%v (stale term)", args.Term, args.LeaderID, reply.Success)
+		return nil
+	}
+
+	if args.Term > n.currentTerm {
+		n.currentTerm = args.Term
+		n.votedFor = -1
+	}
+	n.role = Follower
+	reply.Term = n.currentTerm
+	reply.Success = true
+	n.resetElectionDeadlineLocked()
+
 	n.recordLocked("AppendEntries", "term=%d leader=%d success=%v", args.Term, args.LeaderID, reply.Success)
 	return nil
 }
