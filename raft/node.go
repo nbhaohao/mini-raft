@@ -185,6 +185,17 @@ func (n *Node) sendHeartbeat(peer int, term int) {
 	if err := n.caller.Call(peer, "Node.AppendEntries", args, &reply); err != nil {
 		return
 	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if reply.Term > n.currentTerm {
+		n.currentTerm = reply.Term
+		n.votedFor = -1
+		n.role = Follower
+		n.resetElectionDeadlineLocked()
+		n.recordLocked("StepDown", "heartbeat reply term=%d > currentTerm; back to follower", reply.Term)
+	}
 }
 
 func (n *Node) resetElectionDeadlineLocked() {
