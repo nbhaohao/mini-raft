@@ -9,9 +9,9 @@ type Server struct {
 	net  *network
 }
 
-func newServer(id int, peerIDs []int, net *network, ready <-chan struct{}, seed int64, trace *Trace) *Server {
+func newServer(id int, peerIDs []int, net *network, ready <-chan struct{}, seed int64, trace *Trace, commitC chan<- CommitEntry) *Server {
 	s := &Server{id: id, net: net}
-	s.node = newNode(id, peerIDs, &nodeCaller{fromID: id, net: net}, ready, seed, trace)
+	s.node = newNode(id, peerIDs, &nodeCaller{fromID: id, net: net}, ready, seed, trace, commitC)
 	net.addNode(s.node)
 	return s
 }

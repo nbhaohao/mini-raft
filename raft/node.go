@@ -62,11 +62,17 @@ type Node struct {
 	deadline          time.Time
 	nextHeartbeat     time.Time
 	lastLeaderContact time.Time
+	log               []LogEntry
+	commitIndex       int
+	lastApplied       int
+	commitC           chan<- CommitEntry
+	nextIndex         map[int]int
+	matchIndex        map[int]int
 
 	done chan struct{}
 }
 
-func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, seed int64, trace *Trace) *Node {
+func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, seed int64, trace *Trace, commitC chan<- CommitEntry) *Node {
 	n := &Node{
 		id:          id,
 		peerIDs:     append([]int(nil), peerIDs...),
@@ -76,6 +82,11 @@ func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, se
 		currentTerm: 0,
 		votedFor:    -1,
 		role:        Follower,
+		commitIndex: -1,
+		lastApplied: -1,
+		commitC:     commitC,
+		nextIndex:   make(map[int]int),
+		matchIndex:  make(map[int]int),
 		done:        make(chan struct{}),
 	}
 	n.resetElectionDeadlineLocked()
@@ -143,13 +154,14 @@ func (n *Node) startElectionLocked() {
 	n.recordLocked("StartElection", "term=%d self-vote", electionTerm)
 
 	votes := 1
+	lastIndex, lastTerm := n.lastLogInfoLocked()
 	for _, peer := range n.peerIDs {
-		go n.collectVote(peer, electionTerm, &votes)
+		go n.collectVote(peer, electionTerm, lastIndex, lastTerm, &votes)
 	}
 }
 
-func (n *Node) collectVote(peer int, electionTerm int, votes *int) {
-	args := RequestVoteArgs{Term: electionTerm, CandidateID: n.id}
+func (n *Node) collectVote(peer int, electionTerm, lastIndex, lastTerm int, votes *int) {
+	args := RequestVoteArgs{Term: electionTerm, CandidateID: n.id, LastLogIndex: lastIndex, LastLogTerm: lastTerm}
 	var reply RequestVoteReply
 	if err := n.caller.Call(peer, "Node.RequestVote", args, &reply); err != nil {
 		return
@@ -177,6 +189,7 @@ func (n *Node) collectVote(peer int, electionTerm int, votes *int) {
 	*votes++
 	if *votes > (len(n.peerIDs)+1)/2 {
 		n.role = Leader
+		n.initReplicationStateLocked()
 		n.refreshLeaderDeadlineLocked()
 		n.recordLocked("BecomeLeader", "term=%d votes=%d", n.currentTerm, *votes)
 		n.broadcastHeartbeatLocked()
@@ -192,8 +205,24 @@ func (n *Node) broadcastHeartbeatLocked() {
 	}
 }
 
+func (n *Node) Submit(command any) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.role != Leader {
+		return false
+	}
+	// 你来实现（P1 只建立 leader 本地日志边界，不发送 entries）：
+	// 1. 以 currentTerm 追加 LogEntry；2. 记录本地 index；3. 返回 accepted。
+	return false
+}
+
+func (n *Node) initReplicationStateLocked() {
+	// 你来实现（P1 当选时只初始化每个 follower 的复制游标）：
+	// nextIndex 从当前 log 长度起步，matchIndex 用 -1 表示尚无已确认前缀。
+}
+
 func (n *Node) sendHeartbeat(peer int, term int, acks *int) {
-	args := AppendEntriesArgs{Term: term, LeaderID: n.id}
+	args := AppendEntriesArgs{Term: term, LeaderID: n.id, PrevLogIndex: -1, PrevLogTerm: -1, LeaderCommit: -1}
 	var reply AppendEntriesReply
 	if err := n.caller.Call(peer, "Node.AppendEntries", args, &reply); err != nil {
 		return

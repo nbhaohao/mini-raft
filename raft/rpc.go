@@ -2,9 +2,22 @@ package raft
 
 import "time"
 
+type LogEntry struct {
+	Term    int
+	Command any
+}
+
+type CommitEntry struct {
+	Command any
+	Index   int
+	Term    int
+}
+
 type RequestVoteArgs struct {
-	Term        int
-	CandidateID int
+	Term         int
+	CandidateID  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 type RequestVoteReply struct {
@@ -13,8 +26,12 @@ type RequestVoteReply struct {
 }
 
 type AppendEntriesArgs struct {
-	Term     int
-	LeaderID int
+	Term         int
+	LeaderID     int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []LogEntry
+	LeaderCommit int
 }
 
 type AppendEntriesReply struct {
@@ -48,7 +65,6 @@ func (n *Node) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error 
 		n.role = Follower
 		reply.Term = n.currentTerm
 	}
-
 	if n.votedFor == -1 || n.votedFor == args.CandidateID {
 		n.votedFor = args.CandidateID
 		reply.VoteGranted = true
@@ -77,12 +93,28 @@ func (n *Node) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) 
 	}
 	n.role = Follower
 	reply.Term = n.currentTerm
-	reply.Success = true
 	n.lastLeaderContact = time.Now()
 	n.resetElectionDeadlineLocked()
+	// 你来实现（P2 follower 只在共同前缀匹配后改日志）：
+	// 1. 校验 prev index/term；2. 从首个冲突处截断并追加；3. 幂等重放不增长；
+	// 4. LeaderCommit 只采纳到本地日志尾端。P2 不负责 leader 的多数提交。
+	reply.Success = true
 
 	n.recordLocked("AppendEntries", "term=%d leader=%d success=%v", args.Term, args.LeaderID, reply.Success)
 	return nil
+}
+
+func (n *Node) lastLogInfoLocked() (int, int) {
+	// 你来实现（P5 把最后一条日志的 index/term 放进 RequestVote）：
+	// 空日志返回 -1/-1；非空返回最后一格的位置与 term。
+	return -1, -1
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (n *Node) recordLocked(kind, format string, args ...any) {
