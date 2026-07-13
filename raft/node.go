@@ -52,10 +52,11 @@ type Node struct {
 	trace   *Trace
 	rng     *rand.Rand
 
-	currentTerm int
-	votedFor    int
-	role        Role
-	deadline    time.Time
+	currentTerm   int
+	votedFor      int
+	role          Role
+	deadline      time.Time
+	nextHeartbeat time.Time
 
 	done chan struct{}
 }
@@ -111,7 +112,13 @@ func (n *Node) run() {
 func (n *Node) tick() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.role != Leader && time.Now().After(n.deadline) {
+	if n.role == Leader {
+		if time.Now().After(n.nextHeartbeat) {
+			n.broadcastHeartbeatLocked()
+		}
+		return
+	}
+	if time.Now().After(n.deadline) {
 		n.startElectionLocked()
 	}
 }
@@ -160,6 +167,23 @@ func (n *Node) collectVote(peer int, electionTerm int, votes *int) {
 	if *votes > (len(n.peerIDs)+1)/2 {
 		n.role = Leader
 		n.recordLocked("BecomeLeader", "term=%d votes=%d", n.currentTerm, *votes)
+		n.broadcastHeartbeatLocked()
+	}
+}
+
+func (n *Node) broadcastHeartbeatLocked() {
+	n.nextHeartbeat = time.Now().Add(heartbeatInterval)
+	term := n.currentTerm
+	for _, peer := range n.peerIDs {
+		go n.sendHeartbeat(peer, term)
+	}
+}
+
+func (n *Node) sendHeartbeat(peer int, term int) {
+	args := AppendEntriesArgs{Term: term, LeaderID: n.id}
+	var reply AppendEntriesReply
+	if err := n.caller.Call(peer, "Node.AppendEntries", args, &reply); err != nil {
+		return
 	}
 }
 
