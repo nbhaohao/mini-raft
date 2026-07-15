@@ -104,7 +104,20 @@ func (n *Node) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) 
 			return nil
 		}
 	}
-	// 你来实现（P2 S2/S3）：共同前缀对齐后截断+追加；commitIndex 采纳到本地尾端。
+	// 对齐共同前缀：逐格比对 entries，遇到第一个 term 冲突处才截断并追加剩余。
+	// 已有且一致的格幂等跳过——不整条清空，才不会误删共同前缀里已提交的日志。
+	for i, entry := range args.Entries {
+		idx := args.PrevLogIndex + 1 + i
+		if idx < len(n.log) {
+			if n.log[idx].Term == entry.Term {
+				continue // 已有且 term 一致：幂等重放，不增长
+			}
+			n.log = n.log[:idx] // 冲突：从此格起截断，保留 [0,idx) 共同前缀
+		}
+		n.log = append(n.log, args.Entries[i:]...) // 追加冲突点起的全部剩余
+		break
+	}
+	// 你来实现（P2 S3）：commitIndex 采纳到 min(LeaderCommit, 本地尾端)。
 	reply.Success = true
 
 	n.recordLocked("AppendEntries", "term=%d leader=%d success=%v", args.Term, args.LeaderID, reply.Success)
