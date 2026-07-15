@@ -218,8 +218,11 @@ func (n *Node) Submit(command any) bool {
 }
 
 func (n *Node) initReplicationStateLocked() {
-	// 你来实现（P1 当选时只初始化每个 follower 的复制游标）：
-	// nextIndex 从当前 log 长度起步，matchIndex 用 -1 表示尚无已确认前缀。
+	next := len(n.log)
+	for _, peer := range n.peerIDs {
+		n.nextIndex[peer] = next
+		n.matchIndex[peer] = -1
+	}
 }
 
 func (n *Node) sendHeartbeat(peer int, term int, acks *int) {
