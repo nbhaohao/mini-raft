@@ -117,7 +117,11 @@ func (n *Node) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) 
 		n.log = append(n.log, args.Entries[i:]...) // 追加冲突点起的全部剩余
 		break
 	}
-	// 你来实现（P2 S3）：commitIndex 采纳到 min(LeaderCommit, 本地尾端)。
+	// 采纳 leader 的提交进度，但至多到本地日志尾端：follower 不能提交一个自己还没收到的 index。
+	// 真正把 committed 日志投递给状态机（写 commitC）留给 P4。
+	if args.LeaderCommit > n.commitIndex {
+		n.commitIndex = minInt(args.LeaderCommit, len(n.log)-1)
+	}
 	reply.Success = true
 
 	n.recordLocked("AppendEntries", "term=%d leader=%d success=%v", args.Term, args.LeaderID, reply.Success)
