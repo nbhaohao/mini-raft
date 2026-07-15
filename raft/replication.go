@@ -4,9 +4,22 @@ package raft
 // fault injection, and trace collection remain in the files supplied in m01.
 
 func (n *Node) appendArgsForPeerLocked(peer int) AppendEntriesArgs {
-	// 你来实现（P3 从 nextIndex 推出共同前缀与待发送后缀）：
-	// PrevLogIndex 指向 nextIndex 前一格；Entries 从 nextIndex 开始复制。
-	return AppendEntriesArgs{Term: n.currentTerm, LeaderID: n.id, PrevLogIndex: -1, PrevLogTerm: -1, LeaderCommit: n.commitIndex}
+	next := n.nextIndex[peer]
+	prevIndex := next - 1 // 共同前缀的最后一格：nextIndex 前一格
+	prevTerm := -1        // prevIndex=-1（从头发）时无前一格，用哨兵 -1
+	if prevIndex >= 0 {
+		prevTerm = n.log[prevIndex].Term
+	}
+	// 拷贝一份 entries，避免与本地 n.log 共享底层数组（RPC 时已释放锁，log 可能被并发改）。
+	entries := append([]LogEntry(nil), n.log[next:]...)
+	return AppendEntriesArgs{
+		Term:         n.currentTerm,
+		LeaderID:     n.id,
+		PrevLogIndex: prevIndex,
+		PrevLogTerm:  prevTerm,
+		Entries:      entries,
+		LeaderCommit: n.commitIndex,
+	}
 }
 
 func (n *Node) replicateToPeer(peer int, term int, acks *int) {
