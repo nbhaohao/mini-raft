@@ -197,12 +197,8 @@ func (n *Node) collectVote(peer int, electionTerm, lastIndex, lastTerm int, vote
 }
 
 func (n *Node) broadcastHeartbeatLocked() {
-	n.nextHeartbeat = time.Now().Add(heartbeatInterval)
-	term := n.currentTerm
-	acks := 1
-	for _, peer := range n.peerIDs {
-		go n.sendHeartbeat(peer, term, &acks)
-	}
+	// P3 起心跳与真实 entries 走同一条复制路径：空心跳 = entries 恰好为空的 AppendEntries。
+	n.broadcastAppendEntriesLocked()
 }
 
 func (n *Node) Submit(command any) bool {

@@ -1,5 +1,7 @@
 package raft
 
+import "time"
+
 // replication.go is the learner-owned protocol surface for m02. Transport,
 // fault injection, and trace collection remain in the files supplied in m01.
 
@@ -61,12 +63,26 @@ func (n *Node) replicateToPeer(peer int, term int, acks *int) {
 		n.recordLocked("Replicate", "peer=%d rejected; nextIndex-- -> %d", peer, n.nextIndex[peer])
 		return
 	}
-	// 你来实现（P3 S3）：成功路径推进 matchIndex/nextIndex + 多数 ack 续 lease。
+	// 成功：follower 已接纳「这次发出的」entries。matchIndex 只能推到本 RPC 真正送达的位置，
+	// 即 prev + 本次 entries 条数——不是 leader 日志尾端（leader 可能更领先，follower 没收到那么多）。
+	newMatch := args.PrevLogIndex + len(args.Entries)
+	if newMatch > n.matchIndex[peer] { // 单调前进：陈旧回包不得让 matchIndex 回退
+		n.matchIndex[peer] = newMatch
+	}
+	n.nextIndex[peer] = n.matchIndex[peer] + 1
+	*acks++
+	if *acks > (len(n.peerIDs)+1)/2 {
+		n.refreshLeaderDeadlineLocked() // 多数派联系确认，续 leader lease
+	}
 }
 
 func (n *Node) broadcastAppendEntriesLocked() {
-	// 你来实现（P3 用同一条 AppendEntries 路径承载空心跳和真实 entries）：
-	// 每个 peer 启动一次复制，并沿用 m01 的多数 ack leader lease。
+	n.nextHeartbeat = time.Now().Add(heartbeatInterval)
+	term := n.currentTerm
+	acks := 1 // 自己先算一票
+	for _, peer := range n.peerIDs {
+		go n.replicateToPeer(peer, term, &acks)
+	}
 }
 
 func (n *Node) advanceCommitIndexLocked() {
