@@ -95,9 +95,16 @@ func (n *Node) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) 
 	reply.Term = n.currentTerm
 	n.lastLeaderContact = time.Now()
 	n.resetElectionDeadlineLocked()
-	// 你来实现（P2 follower 只在共同前缀匹配后改日志）：
-	// 1. 校验 prev index/term；2. 从首个冲突处截断并追加；3. 幂等重放不增长；
-	// 4. LeaderCommit 只采纳到本地日志尾端。P2 不负责 leader 的多数提交。
+
+	// prev 一致性检查：PrevLogIndex=-1 表示空前缀（entries 从下标 0 起，无需匹配任何已有格）。
+	// 否则本地必须已有该格且 term 相同，才证明共同前缀对齐；越界或 term 不符则拒绝，等 leader 回退重试。
+	if args.PrevLogIndex >= 0 {
+		if args.PrevLogIndex >= len(n.log) || n.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+			n.recordLocked("AppendEntries", "term=%d leader=%d success=false (prev mismatch: prevIdx=%d)", args.Term, args.LeaderID, args.PrevLogIndex)
+			return nil
+		}
+	}
+	// 你来实现（P2 S2/S3）：共同前缀对齐后截断+追加；commitIndex 采纳到本地尾端。
 	reply.Success = true
 
 	n.recordLocked("AppendEntries", "term=%d leader=%d success=%v", args.Term, args.LeaderID, reply.Success)
