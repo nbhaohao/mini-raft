@@ -23,8 +23,45 @@ func (n *Node) appendArgsForPeerLocked(peer int) AppendEntriesArgs {
 }
 
 func (n *Node) replicateToPeer(peer int, term int, acks *int) {
-	// 你来实现（P3 RPC 等待不持锁，回包后再复查 term 与 role）：
-	// success 推进 nextIndex/matchIndex；日志不匹配才回退并重试。
+	n.mu.Lock()
+	if n.role != Leader || n.currentTerm != term {
+		n.mu.Unlock()
+		return
+	}
+	args := n.appendArgsForPeerLocked(peer)
+	n.mu.Unlock() // RPC 等待期间不持锁
+
+	var reply AppendEntriesReply
+	if err := n.caller.Call(peer, "Node.AppendEntries", args, &reply); err != nil {
+		return
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	// 回包见更高 term：立即清票降级，放弃 leader 身份。
+	if reply.Term > n.currentTerm {
+		n.currentTerm = reply.Term
+		n.votedFor = -1
+		n.role = Follower
+		n.resetElectionDeadlineLocked()
+		n.recordLocked("StepDown", "append reply term=%d > currentTerm; back to follower", reply.Term)
+		return
+	}
+	// 复查：RPC 往返期间可能已被降级或换届，陈旧回包不得改状态。
+	if n.role != Leader || n.currentTerm != term {
+		return
+	}
+
+	if !reply.Success {
+		// 共同前缀未对齐：nextIndex 回退一格，下一轮心跳用更早的 prev 重试。
+		if n.nextIndex[peer] > 0 {
+			n.nextIndex[peer]--
+		}
+		n.recordLocked("Replicate", "peer=%d rejected; nextIndex-- -> %d", peer, n.nextIndex[peer])
+		return
+	}
+	// 你来实现（P3 S3）：成功路径推进 matchIndex/nextIndex + 多数 ack 续 lease。
 }
 
 func (n *Node) broadcastAppendEntriesLocked() {
