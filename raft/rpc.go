@@ -118,9 +118,12 @@ func (n *Node) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) 
 		break
 	}
 	// 采纳 leader 的提交进度，但至多到本地日志尾端：follower 不能提交一个自己还没收到的 index。
-	// 真正把 committed 日志投递给状态机（写 commitC）留给 P4。
 	if args.LeaderCommit > n.commitIndex {
-		n.commitIndex = minInt(args.LeaderCommit, len(n.log)-1)
+		newCommit := minInt(args.LeaderCommit, len(n.log)-1)
+		if newCommit > n.commitIndex {
+			n.commitIndex = newCommit
+			n.notifyCommitLocked()
+		}
 	}
 	reply.Success = true
 

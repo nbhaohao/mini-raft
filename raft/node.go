@@ -66,6 +66,7 @@ type Node struct {
 	commitIndex       int
 	lastApplied       int
 	commitC           chan<- CommitEntry
+	commitNotify      chan struct{}
 	nextIndex         map[int]int
 	matchIndex        map[int]int
 
@@ -74,20 +75,21 @@ type Node struct {
 
 func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, seed int64, trace *Trace, commitC chan<- CommitEntry) *Node {
 	n := &Node{
-		id:          id,
-		peerIDs:     append([]int(nil), peerIDs...),
-		caller:      caller,
-		trace:       trace,
-		rng:         rand.New(rand.NewSource(seed + int64(id)*1009)),
-		currentTerm: 0,
-		votedFor:    -1,
-		role:        Follower,
-		commitIndex: -1,
-		lastApplied: -1,
-		commitC:     commitC,
-		nextIndex:   make(map[int]int),
-		matchIndex:  make(map[int]int),
-		done:        make(chan struct{}),
+		id:           id,
+		peerIDs:      append([]int(nil), peerIDs...),
+		caller:       caller,
+		trace:        trace,
+		rng:          rand.New(rand.NewSource(seed + int64(id)*1009)),
+		currentTerm:  0,
+		votedFor:     -1,
+		role:         Follower,
+		commitIndex:  -1,
+		lastApplied:  -1,
+		commitC:      commitC,
+		commitNotify: make(chan struct{}, 1),
+		nextIndex:    make(map[int]int),
+		matchIndex:   make(map[int]int),
+		done:         make(chan struct{}),
 	}
 	n.resetElectionDeadlineLocked()
 

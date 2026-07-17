@@ -100,13 +100,17 @@ func (n *Node) advanceCommitIndexLocked() {
 		}
 		if count > (len(n.peerIDs)+1)/2 {
 			n.commitIndex = index
+			n.notifyCommitLocked()
 			return
 		}
 	}
 }
 
 func (n *Node) notifyCommitLocked() {
-	// 你来实现（P4 只发轻量通知，不能持 Node.mu 阻塞写 commitC）。
+	select {
+	case n.commitNotify <- struct{}{}:
+	default:
+	}
 }
 
 func (n *Node) runCommitSender() {
