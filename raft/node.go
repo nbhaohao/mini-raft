@@ -97,6 +97,7 @@ func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, se
 		<-ready
 		n.run()
 	}()
+	go n.runCommitSender()
 	return n
 }
 

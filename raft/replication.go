@@ -114,7 +114,37 @@ func (n *Node) notifyCommitLocked() {
 }
 
 func (n *Node) runCommitSender() {
-	// 你来实现（P4 使用单一长期 goroutine 串行投递）：
-	// 锁内快照 commitIndex/lastApplied，锁外按 index 写 CommitEntry。
-	<-n.done
+	for {
+		select {
+		case <-n.commitNotify:
+		case <-n.done:
+			return
+		}
+
+		n.mu.Lock()
+		start := n.lastApplied + 1
+		end := n.commitIndex
+		if start > end {
+			n.mu.Unlock()
+			continue
+		}
+		entries := append([]LogEntry(nil), n.log[start:end+1]...)
+		n.mu.Unlock()
+
+		for i, entry := range entries {
+			index := start + i
+			commit := CommitEntry{Command: entry.Command, Index: index, Term: entry.Term}
+			select {
+			case n.commitC <- commit:
+			case <-n.done:
+				return
+			}
+
+			n.mu.Lock()
+			if index > n.lastApplied {
+				n.lastApplied = index
+			}
+			n.mu.Unlock()
+		}
+	}
 }
