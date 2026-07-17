@@ -70,6 +70,7 @@ func (n *Node) replicateToPeer(peer int, term int, acks *int) {
 		n.matchIndex[peer] = newMatch
 	}
 	n.nextIndex[peer] = n.matchIndex[peer] + 1
+	n.advanceCommitIndexLocked()
 	*acks++
 	if *acks > (len(n.peerIDs)+1)/2 {
 		n.refreshLeaderDeadlineLocked() // 多数派联系确认，续 leader lease
@@ -86,8 +87,22 @@ func (n *Node) broadcastAppendEntriesLocked() {
 }
 
 func (n *Node) advanceCommitIndexLocked() {
-	// 你来实现（P4 只让 currentTerm entry 直接推进 commitIndex）：
-	// 从日志尾部向前找多数 matchIndex；旧 term 前缀只能被间接提交。
+	for index := len(n.log) - 1; index > n.commitIndex; index-- {
+		if n.log[index].Term != n.currentTerm {
+			continue
+		}
+
+		count := 1 // leader 本地已有该 entry
+		for _, peer := range n.peerIDs {
+			if n.matchIndex[peer] >= index {
+				count++
+			}
+		}
+		if count > (len(n.peerIDs)+1)/2 {
+			n.commitIndex = index
+			return
+		}
+	}
 }
 
 func (n *Node) notifyCommitLocked() {
