@@ -65,7 +65,10 @@ func (n *Node) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error 
 		n.role = Follower
 		reply.Term = n.currentTerm
 	}
-	if n.votedFor == -1 || n.votedFor == args.CandidateID {
+	lastIndex, lastTerm := n.lastLogInfoLocked()
+	upToDate := args.LastLogTerm > lastTerm ||
+		(args.LastLogTerm == lastTerm && args.LastLogIndex >= lastIndex)
+	if upToDate && (n.votedFor == -1 || n.votedFor == args.CandidateID) {
 		n.votedFor = args.CandidateID
 		reply.VoteGranted = true
 		n.resetElectionDeadlineLocked()
