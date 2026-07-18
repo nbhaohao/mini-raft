@@ -93,6 +93,11 @@ func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, se
 		matchIndex:   make(map[int]int),
 		done:         make(chan struct{}),
 	}
+	if state, ok := store.Load(); ok {
+		n.currentTerm = state.CurrentTerm
+		n.votedFor = state.VotedFor
+		n.log = append([]LogEntry(nil), state.Log...)
+	}
 	n.resetElectionDeadlineLocked()
 
 	go func() {
