@@ -13,6 +13,8 @@ type Harness struct {
 	seed          int64
 	net           *network
 	servers       []*Server
+	stores        []StableStore
+	commitChans   []chan CommitEntry
 	trace         *Trace
 	commitMu      sync.Mutex
 	commits       map[int][]CommitEntry
@@ -39,7 +41,10 @@ func NewHarness(t *testing.T, nodeCount int, seed int64) *Harness {
 			}
 		}
 		commitC := make(chan CommitEntry, 128)
-		h.servers = append(h.servers, newServer(id, peers, net, ready, seed, trace, commitC))
+		store := NewMemoryStableStore()
+		h.stores = append(h.stores, store)
+		h.commitChans = append(h.commitChans, commitC)
+		h.servers = append(h.servers, newServer(id, peers, net, ready, seed, trace, commitC, store))
 		h.collectorWG.Add(1)
 		go func(id int, c <-chan CommitEntry) {
 			defer h.collectorWG.Done()
@@ -177,6 +182,17 @@ func (h *Harness) Crash(id int) {
 func (h *Harness) Restart(id int) {
 	h.Reconnect(id)
 }
+
+func (h *Harness) Partition(left, right []int) {
+	// 你来实现（只阻断两组之间的双向链路，保留组内通信）:
+}
+
+func (h *Harness) Heal() {
+	// 你来实现（只清除分区规则，不覆盖显式 delay/drop）:
+}
+
+func (h *Harness) SetDelay(id int, delay time.Duration) { h.net.setDelay(id, delay) }
+func (h *Harness) SetDrop(id int, drop bool)            { h.net.setDrop(id, drop) }
 
 func (h *Harness) Events() []TraceEvent {
 	return h.trace.Events()

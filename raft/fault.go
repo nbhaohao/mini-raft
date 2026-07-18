@@ -20,6 +20,7 @@ type network struct {
 	connected map[int]bool
 	rng       *rand.Rand
 	rules     map[int]faultRule
+	blocked   map[[2]int]bool
 }
 
 func newNetwork(seed int64) *network {
@@ -28,7 +29,14 @@ func newNetwork(seed int64) *network {
 		connected: make(map[int]bool),
 		rng:       rand.New(rand.NewSource(seed)),
 		rules:     make(map[int]faultRule),
+		blocked:   make(map[[2]int]bool),
 	}
+}
+
+func (n *network) canCommunicate(fromID, peerID int) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.connected[fromID] && n.connected[peerID] && !n.blocked[[2]int{fromID, peerID}]
 }
 
 func (n *network) addNode(node *Node) {
@@ -84,7 +92,7 @@ func (c *nodeCaller) Call(peerID int, method string, args any, reply any) error 
 func (n *network) call(fromID int, peerID int, method string, args any, reply any) error {
 	n.mu.Lock()
 	node := n.nodes[peerID]
-	connected := n.connected[fromID] && n.connected[peerID]
+	connected := n.connected[fromID] && n.connected[peerID] && !n.blocked[[2]int{fromID, peerID}]
 	rule := n.rules[peerID]
 	n.mu.Unlock()
 

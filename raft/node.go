@@ -67,13 +67,14 @@ type Node struct {
 	lastApplied       int
 	commitC           chan<- CommitEntry
 	commitNotify      chan struct{}
+	store             StableStore
 	nextIndex         map[int]int
 	matchIndex        map[int]int
 
 	done chan struct{}
 }
 
-func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, seed int64, trace *Trace, commitC chan<- CommitEntry) *Node {
+func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, seed int64, trace *Trace, commitC chan<- CommitEntry, store StableStore) *Node {
 	n := &Node{
 		id:           id,
 		peerIDs:      append([]int(nil), peerIDs...),
@@ -87,6 +88,7 @@ func newNode(id int, peerIDs []int, caller peerCaller, ready <-chan struct{}, se
 		lastApplied:  -1,
 		commitC:      commitC,
 		commitNotify: make(chan struct{}, 1),
+		store:        store,
 		nextIndex:    make(map[int]int),
 		matchIndex:   make(map[int]int),
 		done:         make(chan struct{}),
