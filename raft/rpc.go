@@ -132,9 +132,11 @@ func (n *Node) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) 
 }
 
 func (n *Node) lastLogInfoLocked() (int, int) {
-	// 你来实现（P5 把最后一条日志的 index/term 放进 RequestVote）：
-	// 空日志返回 -1/-1；非空返回最后一格的位置与 term。
-	return -1, -1
+	if len(n.log) == 0 {
+		return -1, -1
+	}
+	index := len(n.log) - 1
+	return index, n.log[index].Term
 }
 
 func minInt(a, b int) int {
